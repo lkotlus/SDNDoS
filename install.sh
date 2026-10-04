@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-apt install mininet openvswitch-switch python3-pip python3-venv
-python3.12 -m venv venv
+sudo apt install mininet openvswitch-switch
+
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv python install 3.12
+uv venv venv --python 3.12 --seed
+
 ./venv/bin/python3 -m pip install -r requirements.txt

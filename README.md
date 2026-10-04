@@ -5,7 +5,7 @@ Using SDNs to automatically detect and respond to DoS attacks.
 System packages:
 - `mininet`
 - `openvswitch-switch`
-- `python3.12` (likely requires installation from source)
+- `uv`
 
 ### Installation
 We currently only support Debian-based distributions of Linux.
