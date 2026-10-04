@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-sudo apt install mininet openvswitch-switch
+sudo apt install mininet openvswitch-switch hping3
 
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv python install 3.12

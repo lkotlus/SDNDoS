@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import socket
 from pathlib import Path
 
 from mininet.cli import CLI
@@ -39,6 +40,18 @@ def start_controller(switch_path: str) -> subprocess.Popen:
         )
 
 
+# Very jank
+def conn_controller(port=6653, timeout=15):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+            return
+        except OSError:
+            time.sleep(0.25)
+    raise RuntimeError("Couldn't connect to controller within deadline, check controller.log")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DoS-responding SDN testbed")
     parser.add_argument(
@@ -51,7 +64,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-S", "--switch", type=str, required=False,
-        default="switch/switch.py",
+        default="switches/dumb_switch.py",
         help="Path to the switch file you want to use."
     )
     args = parser.parse_args()
@@ -64,7 +77,7 @@ if __name__ == "__main__":
 
     try:
         osken = start_controller(args.switch)
-        time.sleep(10)
+        conn_controller()
 
         topo = create_network(args.num_servers, args.num_external)
         topo.net.start()
