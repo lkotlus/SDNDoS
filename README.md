@@ -68,7 +68,7 @@ PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
 rtt min/avg/max/mdev = 0.121/1.912/4.760/2.035 ms
 ```
 
-To launch an attack from an external host to a server:
+To launch a SYN flood attack from an external host to a server:
 ```
 mininet> e4 hping3 -S -p 80 -i u1000 -c 5000 i1
 len=44 ip=10.0.0.2 ttl=64 DF id=0 sport=80 flags=SA seq=1622 win=42340 rtt=8.9 ms
@@ -80,13 +80,19 @@ len=44 ip=10.0.0.2 ttl=64 DF id=0 sport=80 flags=SA seq=1631 win=42340 rtt=6.4 m
 --- 10.0.0.2 hping statistic ---
 5000 packets transmitted, 1632 packets received, 68% packet loss
 round-trip min/avg/max = 0.0/11.3/1006.0 ms
+```
 
+After this, we can verify that host `e4` is banned from reaching `i1`:
+```
 mininet> e4 ping -c 3 i1
 PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
 
 --- 10.0.0.2 ping statistics ---
 3 packets transmitted, 0 received, 100% packet loss, time 2055ms
+```
 
+We can also make sure that `e4` isn't banned from reaching other servers, such as `i0`:
+```
 mininet> e4 ping -c 3 i0
 PING 10.0.0.1 (10.0.0.1) 56(84) bytes of data.
 64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=7.29 ms
