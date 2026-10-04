@@ -28,6 +28,7 @@ repoze-lru==0.8
 requests==2.34.2
 rfc3986==2.0.0
 Routes==2.5.1
+ruff==0.16.10
 setuptools==84.0.0
 six==1.17.0
 sortedcontainers==2.4.0

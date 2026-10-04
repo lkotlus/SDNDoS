@@ -5,16 +5,18 @@ than a given threshold, it permanently blocks the (src, dst) pair.
 """
 
 import ipaddress
-import os
 import time
 
 from os_ken.base import app_manager
 from os_ken.controller import ofp_event
 from os_ken.controller.handler import (
-    CONFIG_DISPATCHER, DEAD_DISPATCHER, MAIN_DISPATCHER, set_ev_cls
+    CONFIG_DISPATCHER,
+    DEAD_DISPATCHER,
+    MAIN_DISPATCHER,
+    set_ev_cls,
 )
 from os_ken.lib import hub
-from os_ken.lib.packet import ethernet, ether_types, ipv4, packet
+from os_ken.lib.packet import ether_types, ethernet, ipv4, packet
 from os_ken.ofproto import ofproto_v1_3
 
 # Currently hardcoded network range for servers
@@ -31,7 +33,7 @@ BLOCK_PRIORITY = 100
 
 
 class L2Switch(app_manager.OSKenApp):
-    OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+    OFP_VERSIONS = (ofproto_v1_3.OFP_VERSION)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
