@@ -1,7 +1,7 @@
 """
 Creates a learning switch that implements the most basic possible
-DoS rule. If an external host sends packets to a server faster 
-than a given threshold, it permanently blocks the (src, dst) pair.
+DoS rule. If an external host sends packets to a server faster than a given
+threshold, it blocks the (src, dst) pair, permanently or for BLOCK_SECONDS.
 """
 
 import ipaddress
@@ -25,6 +25,10 @@ SERVER_NET = ipaddress.ip_network("10.0.0.0/24")
 THRESHOLD_PPS = 200
 # Poll once per second
 POLL_SECONDS = 1.0
+# Ignore samples taken closer together than this (too noisy)
+MIN_SAMPLE_SECONDS = POLL_SECONDS / 2
+# Forget counters for flows that haven't shown up in a stats reply for this amount of time
+STALE_SECONDS = 5 * POLL_SECONDS
 # If BLOCK_SECONDS is 0, the block is permanent
 BLOCK_SECONDS = 0
 
@@ -40,13 +44,16 @@ class DumbSwitch(app_manager.OSKenApp):
 
         self.mac_to_port = {}   # dpid: {mac: port}
         self.datapaths = {}     # dpid: dp
-        self.last_seen = {}     # dpid, src, dst: packet_count, timestamp
+        # (dpid, src, dst): (packet_count, flow_duration, seen_at)
+        self.last_seen = {}
         self.blocked = set()    # dpid, src, dst
         self.monitor_thread = hub.spawn(self._monitor)
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)  # type: ignore
     def switch_features_handler(self, ev):
-        """Install the the top priority table that sends unmatched packets to the controller."""
+        """
+        Install the table-miss flow that sends unmatched packets to the controller.
+        """
         dp = ev.msg.datapath
         self.logger.info(f"Switch connected: {dp.id}")
         parser, ofp = dp.ofproto_parser, dp.ofproto
@@ -97,20 +104,27 @@ class DumbSwitch(app_manager.OSKenApp):
             datapath=dp, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions, data=data))
 
-    def _add_flow(self, dp, priority, match, actions, idle_timeout=0, hard_timeout=0):
+    def _add_flow(self, dp, priority, match, actions, idle_timeout=0, hard_timeout=0, flags=0):
         """Add a flow, no action means drop."""
         parser, ofp = dp.ofproto_parser, dp.ofproto
         inst = [parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)] if actions else []
         dp.send_msg(parser.OFPFlowMod(
             datapath=dp, priority=priority, match=match, instructions=inst,
-            idle_timeout=idle_timeout, hard_timeout=hard_timeout))
+            idle_timeout=idle_timeout, hard_timeout=hard_timeout, flags=flags))
 
     def _monitor(self):
         """Periodically get stats."""
         while True:
             for dp in list(self.datapaths.values()):
                 dp.send_msg(dp.ofproto_parser.OFPFlowStatsRequest(dp))
+            self._prune_stale()
             hub.sleep(POLL_SECONDS)
+
+    def _prune_stale(self):
+        """Drop counters for flows the switch no longer reports (e.g. idled out)."""
+        cutoff = time.monotonic() - STALE_SECONDS
+        for key in [k for k, (_, _, seen_at) in self.last_seen.items() if seen_at < cutoff]:
+            del self.last_seen[key]
 
     @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)  # type: ignore
     def flow_stats_handler(self, ev):
@@ -129,24 +143,57 @@ class DumbSwitch(app_manager.OSKenApp):
                 continue
 
             key = (dp.id, src, dst)
-            prev = self.last_seen.get(key)
-            self.last_seen[key] = (stat.packet_count, now)
-            if prev is None or key in self.blocked:
+            if key in self.blocked:
+                # Start from a fresh baseline once the block is lifted
+                self.last_seen.pop(key, None)
                 continue
 
-            prev_count, prev_time = prev
-            # Handle restarted counter.
-            delta = stat.packet_count - prev_count if stat.packet_count >= prev_count else stat.packet_count
-            rate = delta / (now - prev_time)
+            # Use the switch's own clock for the flow, not when the reply reached us
+            duration = stat.duration_sec + stat.duration_nsec / 1e9
+            prev = self.last_seen.get(key)
+
+            if prev is None:
+                self.last_seen[key] = (stat.packet_count, duration, now)
+                continue
+
+            prev_count, prev_duration, _ = prev
+            elapsed = duration - prev_duration
+            delta = stat.packet_count - prev_count
+
+            # Counter or duration went backwards: the flow was replaced, rebaseline
+            if elapsed < 0 or delta < 0:
+                self.last_seen[key] = (stat.packet_count, duration, now)
+                continue
+            # Too soon after the last sample, keep the older baseline
+            if elapsed < MIN_SAMPLE_SECONDS:
+                continue
+
+            self.last_seen[key] = (stat.packet_count, duration, now)
+            rate = delta / elapsed
 
             # Block the (src, dst) pair if the rate exceeds the stated threshold
             if rate > THRESHOLD_PPS:
                 self._block(dp, src, dst, rate)
 
+    @set_ev_cls(ofp_event.EventOFPFlowRemoved, MAIN_DISPATCHER)  # type: ignore
+    def flow_removed_handler(self, ev):
+        """Forget a block once the switch expires its drop rule."""
+        msg = ev.msg
+        if msg.priority != BLOCK_PRIORITY:
+            return
+        src, dst = msg.match.get("ipv4_src"), msg.match.get("ipv4_dst")
+        key = (msg.datapath.id, src, dst)
+        if key in self.blocked:
+            self.blocked.discard(key)
+            self.logger.warning(f"UNBLOCKED: {src} -> {dst}")
+
     def _block(self, dp, src, dst, rate):
         """Blocks a (src, dst) pair."""
-        parser = dp.ofproto_parser
+        parser, ofp = dp.ofproto_parser, dp.ofproto
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src, ipv4_dst=dst)
-        self._add_flow(dp, BLOCK_PRIORITY, match, [], hard_timeout=BLOCK_SECONDS)
+        # Ask for a FlowRemoved message so we know when a temporary block expires
+        self._add_flow(dp, BLOCK_PRIORITY, match, [],
+                       hard_timeout=BLOCK_SECONDS, flags=ofp.OFPFF_SEND_FLOW_REM)
         self.blocked.add((dp.id, src, dst))
+        self.last_seen.pop((dp.id, src, dst), None)
         self.logger.warning(f"BLOCKED: {src} -> {dst} at {rate:.0f} pps")

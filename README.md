@@ -2,11 +2,13 @@
 Using SDNs to automatically detect and respond to DoS attacks.
 
 ### Requirements
-System packages:
+System packages (installed by `install.sh`):
 - `mininet`
 - `openvswitch-switch`
-- `uv`
 - `hping3`
+- `curl`, `git`
+
+`uv` is used to manage Python 3.12 and is installed by `install.sh` if it isn't already present.
 
 ### Installation
 We currently only support Debian-based distributions of Linux.
@@ -16,7 +18,7 @@ $ ./install.sh
 ```
 
 ### Usage
-After activating the virtual envrionment:
+After activating the virtual environment:
 
 ```
 $ python3 main.py -h
@@ -108,5 +110,10 @@ A breakdown of the attack command:
 - `hping3`: common tool for network testing
 - `-S`: SYN
 - `-p 80`: port 80
-- `-i u1000`: interval of 1,000 microseconds (send 1,000,000 packets per second)
+- `-i u1000`: interval of 1,000 microseconds (send 1,000 packets per second)
 - `-c 5000`: send 5,000 packets
+
+If a run is interrupted and leaves Mininet state behind, clean up with:
+```
+$ sudo mn -c
+```

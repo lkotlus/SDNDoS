@@ -27,21 +27,27 @@ def create_network(
     """
     net = Mininet(controller=None, switch=OVSSwitch, link=TCLink)
 
-    net.addController(
-        "c0",
-        controller=RemoteController,
-        ip=controller_ip,
-        port=controller_port
-    )
+    try:
+        net.addController(
+            "c0",
+            controller=RemoteController,
+            ip=controller_ip,
+            port=controller_port
+        )
 
-    servers = create_hosts(net, num_srv, 'i', "10.0.0.0", 24)
-    external = create_hosts(net, num_ext, 'e', "10.1.0.0", 24)
+        servers = create_hosts(net, num_srv, 'i', "10.0.0.0", 24)
+        external = create_hosts(net, num_ext, 'e', "10.1.0.0", 24)
 
-    switch = net.addSwitch("s1", protocols="OpenFlow13")
+        switch = net.addSwitch("s1", protocols="OpenFlow13")
 
-    for group in servers, external:
-        for host in group:
-            net.addLink(host, switch, bw=link_bw)
+        for group in servers, external:
+            for host in group:
+                net.addLink(host, switch, bw=link_bw)
+    except BaseException:
+        # Tear down whatever was already created (namespaces, veths, bridges)
+        # so a failed build doesn't leave leftovers that need `mn -c`.
+        net.stop()
+        raise
 
     return Topology(net, servers, external)
 

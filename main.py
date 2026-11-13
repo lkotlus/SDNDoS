@@ -3,7 +3,6 @@ import os
 import subprocess
 import sys
 import time
-import socket
 from pathlib import Path
 
 from mininet.cli import CLI
@@ -11,6 +10,8 @@ from mininet.cli import CLI
 from sdndos_network.hosts import create_network, start_servers
 
 ROOT = Path(__file__).resolve().parent
+CONTROLLER_LOG = ROOT / "controller.log"
+OPENFLOW_PORT = 6653
 
 
 def elevate_privileges():
@@ -32,7 +33,7 @@ def elevate_privileges():
 
 def start_controller(switch_path: str) -> subprocess.Popen:
     manager = Path(sys.executable).parent / "osken-manager"
-    with open(ROOT / "controller.log", "w") as log:
+    with open(CONTROLLER_LOG, "w") as log:
         return subprocess.Popen(
             [str(manager), str(Path(switch_path).resolve())],
             stdout=log,
@@ -40,16 +41,47 @@ def start_controller(switch_path: str) -> subprocess.Popen:
         )
 
 
-# Very jank
-def conn_controller(port=6653, timeout=15):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+def is_listening(port: int) -> bool:
+    """Check the kernel's socket tables for a TCP listener on the given port."""
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
         try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+            with open(table) as f:
+                next(f)
+                for line in f:
+                    fields = line.split()
+                    local_addr, state = fields[1], fields[3]
+                    if state == "0A" and int(local_addr.rsplit(":", 1)[1], 16) == port:
+                        return True
+        except FileNotFoundError:
+            continue
+    return False
+
+
+# Very jank
+def wait_for_controller(proc: subprocess.Popen, port: int = OPENFLOW_PORT, timeout: float = 15):
+    """
+    Wait until the controller is listening, without opening a connection to it.
+    Fails fast if the controller process dies.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"Controller exited with code {proc.returncode}, check {CONTROLLER_LOG}"
+            )
+        if is_listening(port):
             return
-        except OSError:
-            time.sleep(0.25)
-    raise RuntimeError("Couldn't connect to controller within deadline, check controller.log")
+        time.sleep(0.25)
+    raise RuntimeError(f"Controller wasn't listening within {timeout}s, check {CONTROLLER_LOG}")
+
+
+def stop_controller(proc: subprocess.Popen, timeout: float = 5):
+    proc.terminate()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
 
 
 if __name__ == "__main__":
@@ -77,7 +109,7 @@ if __name__ == "__main__":
 
     try:
         osken = start_controller(args.switch)
-        conn_controller()
+        wait_for_controller(osken)
 
         topo = create_network(args.num_servers, args.num_external)
         topo.net.start()
@@ -92,5 +124,4 @@ if __name__ == "__main__":
             topo.net.stop()
 
         if osken is not None:
-            osken.terminate()
-            osken.wait()
+            stop_controller(osken)
