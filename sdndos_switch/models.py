@@ -40,3 +40,15 @@ class Alert:
     victim: str | None
     sources: tuple[str, ...]
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class MitigationRule:
+    """A rule the base switch installed in the mitigation table on a mitigator's behalf."""
+    kind: str  # "block", "limit" or "allow"
+    dpid: int
+    src: str | None  # None means every source
+    dst: str
+    cookie: int
+    meter_id: int | None
+    seconds: int  # hard timeout, 0 means permanent
