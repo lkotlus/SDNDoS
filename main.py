@@ -2,6 +2,7 @@ import argparse
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -33,11 +34,16 @@ def elevate_privileges():
 
 def start_controller(switch_path: str) -> subprocess.Popen:
     manager = Path(sys.executable).parent / "osken-manager"
+    # Add the repo root to the osken-manager path
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(ROOT), env.get("PYTHONPATH")]))
     with open(CONTROLLER_LOG, "w") as log:
         return subprocess.Popen(
             [str(manager), str(Path(switch_path).resolve())],
             stdout=log,
             stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
         )
 
 
@@ -57,7 +63,6 @@ def is_listening(port: int) -> bool:
     return False
 
 
-# Very jank
 def wait_for_controller(proc: subprocess.Popen, port: int = OPENFLOW_PORT, timeout: float = 15):
     """
     Wait until the controller is listening, without opening a connection to it.
@@ -73,6 +78,42 @@ def wait_for_controller(proc: subprocess.Popen, port: int = OPENFLOW_PORT, timeo
             return
         time.sleep(0.25)
     raise RuntimeError(f"Controller wasn't listening within {timeout}s, check {CONTROLLER_LOG}")
+
+
+def ensure_port_free(port: int = OPENFLOW_PORT):
+    """
+    Refuse to start if something is already listening on the OpenFlow port,
+    usually an osken-manager left over from an earlier run. Otherwise the new controller
+    fails to bind and the switch silently connects to (or loses) the old one.
+    """
+    if is_listening(port):
+        raise RuntimeError(
+            f"Port {port} is already in use, likely a leftover controller. "
+            f"Check with `sudo ss -ltnp | grep {port}`, or clear it with "
+            "`sudo pkill -f osken-manager` and `sudo mn -c`."
+        )
+
+
+def watch_controller(proc: subprocess.Popen, stopping: threading.Event, interval: float = 0.5):
+    """
+    Warn as soon as the controller exits on its own. With the switch in secure
+    fail mode, every packet without an existing flow is dropped from that point on.
+    """
+    def watch():
+        while not stopping.is_set():
+            if proc.poll() is not None:
+                if not stopping.is_set():
+                    sys.stderr.write(
+                        f"\n*** WARNING: controller exited with code {proc.returncode}, "
+                        f"new flows will be dropped. Check {CONTROLLER_LOG}\n"
+                    )
+                    sys.stderr.flush()
+                return
+            stopping.wait(interval)
+
+    thread = threading.Thread(target=watch, name="controller-watch", daemon=True)
+    thread.start()
+    return thread
 
 
 def stop_controller(proc: subprocess.Popen, timeout: float = 5):
@@ -106,10 +147,13 @@ if __name__ == "__main__":
     osken = None
     topo = None
     procs = []
+    stopping = threading.Event()
 
     try:
+        ensure_port_free()
         osken = start_controller(args.switch)
         wait_for_controller(osken)
+        watch_controller(osken, stopping)
 
         topo = create_network(args.num_servers, args.num_external)
         topo.net.start()
@@ -117,6 +161,8 @@ if __name__ == "__main__":
         procs = start_servers(topo.servers)
         CLI(topo.net)
     finally:
+        stopping.set()
+
         for p in procs:
             p.terminate()
 
