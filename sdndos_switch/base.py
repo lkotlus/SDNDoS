@@ -156,7 +156,7 @@ class BaseSwitch(app_manager.OSKenApp):
             actions=actions, data=data))
 
         # Let the detector see the packet after it has been forwarded
-        self._dispatch(self.detector.on_packet_in(dp.id, pkt, time.monotonic()))
+        self._dispatch(self.detector.on_packet_in(dp.id, in_port, pkt, time.monotonic()))
 
     def _add_flow(self, dp, table_id, priority, match, actions=None, goto=None, meter_id=None,
                   idle_timeout=0, hard_timeout=0, flags=0, cookie=0):

@@ -40,6 +40,7 @@ class Alert:
     victim: str | None
     sources: tuple[str, ...]
     detail: str = ""
+    ports: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
