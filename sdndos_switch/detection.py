@@ -28,6 +28,23 @@ class Detector:
         return []
 
 
+class CombinedDetector(Detector):
+    """
+    Runs several detectors side by side and passes on every alert any of them raises.
+    E.g. CombinedDetector(ThresholdDetector(...), PacketInRateDetector(...)).
+    """
+
+    def __init__(self, *detectors: Detector):
+        self.detectors = detectors
+        self.name = "+".join(d.name for d in detectors)
+
+    def on_poll(self, window: PollWindow) -> list[Alert]:
+        return [alert for d in self.detectors for alert in d.on_poll(window)]
+
+    def on_packet_in(self, dpid: int, in_port: int, pkt: packet.Packet, now: float) -> list[Alert]:
+        return [alert for d in self.detectors for alert in d.on_packet_in(dpid, in_port, pkt, now)]
+
+
 class ThresholdDetector(Detector):
     """
     Alerts when a single external host sends packets at a rate greater
@@ -83,23 +100,6 @@ def _suspects(per_source: dict[str, float], min_share: float) -> tuple[str, ...]
         return ()
     heavy = [src for src, pps in per_source.items() if pps >= min_share * total]
     return tuple(sorted(heavy, key=lambda src: -per_source[src]))
-
-
-class CombinedDetector(Detector):
-    """
-    Runs several detectors side by side and passes on every alert any of them raises.
-    E.g. CombinedDetector(ThresholdDetector(...), PacketInRateDetector(...)).
-    """
-
-    def __init__(self, *detectors: Detector):
-        self.detectors = detectors
-        self.name = "+".join(d.name for d in detectors)
-
-    def on_poll(self, window: PollWindow) -> list[Alert]:
-        return [alert for d in self.detectors for alert in d.on_poll(window)]
-
-    def on_packet_in(self, dpid: int, in_port: int, pkt: packet.Packet, now: float) -> list[Alert]:
-        return [alert for d in self.detectors for alert in d.on_packet_in(dpid, in_port, pkt, now)]
 
 
 class AggregateDetector(Detector):

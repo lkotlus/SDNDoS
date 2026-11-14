@@ -27,7 +27,7 @@ class Mitigator:
         """Called when the switch removes a block (such as an expired timeout)."""
 
 
-class Combined(Mitigator):
+class CombinedMitigator(Mitigator):
     """
     Runs several mitigators side-by-side, each getting every hook in order.
     """
