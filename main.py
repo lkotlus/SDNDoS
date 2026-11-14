@@ -137,7 +137,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-S", "--switch", type=str, required=False,
-        default="switches/dumb_switch.py",
+        default="switches/dumb_switch_block.py",
         help="Path to the switch file you want to use."
     )
     args = parser.parse_args()
