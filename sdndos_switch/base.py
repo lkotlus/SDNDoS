@@ -48,7 +48,7 @@ class BaseSwitch(app_manager.OSKenApp):
         self.datapaths = {}     # dpid: dp
         # (dpid, src, dst): (packet_count, byte_count, flow_duration, seen_at)
         self.last_seen = {}
-        self.blocked = set()    # dpid, src, dst
+        self.blocked: set[tuple[int, str, str]] = set()    # dpid, src, dst
         self._pending_samples = {}  # dpid: [FlowSample] for a stats reply still arriving
 
         self.detector = self.make_detector()
@@ -231,7 +231,7 @@ class BaseSwitch(app_manager.OSKenApp):
             self.logger.warning(f"UNBLOCKED: {src} -> {dst}")
             self.mitigator.on_block_removed(msg.datapath.id, src, dst, self.actions)
 
-    def _block(self, dpid, src, dst, seconds) -> bool:
+    def _block(self, dpid: int, src: str, dst: str, seconds: int) -> bool:
         """Blocks a (src, dst) pair."""
         key = (dpid, src, dst)
         dp = self.datapaths.get(dpid)

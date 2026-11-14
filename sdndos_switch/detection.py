@@ -30,7 +30,10 @@ class ThresholdDetector(Detector):
     """
     name = "threshold"
 
-    def __init__(self, protected_net: str | ipaddress.IPv4Network, threshold_pps: float):
+    def __init__(
+        self, protected_net: str | ipaddress.IPv4Network | ipaddress.IPv6Network,
+        threshold_pps: float
+    ):
         self.protected_net = ipaddress.ip_network(protected_net)
         self.threshold_pps = threshold_pps
 

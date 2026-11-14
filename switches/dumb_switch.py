@@ -11,7 +11,7 @@ from sdndos_switch.detection import ThresholdDetector
 from sdndos_switch.mitigation import BlockSource
 
 # Currently hardcoded network range for servers
-SERVER_NET = ipaddress.IPv4Network(ipaddress.ip_network("10.0.0.0/24"))
+SERVER_NET = ipaddress.ip_network("10.0.0.0/24")
 # Also hardcoded packet per second threshold
 THRESHOLD_PPS = 200
 # If BLOCK_SECONDS is 0, the block is permanent
